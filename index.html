@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Multiplayer Escape</title>
+    <style> body { margin: 0; overflow: hidden; } </style>
+</head>
+<body>
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // 1. Setup Socket connection
+        // Replace with your actual server URL once deployed
+        const socket = io('https://your-server-name.onrender.com'); 
+
+        // 2. Setup 3D Scene
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // Sky blue
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const light = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(light);
+        const sun = new THREE.DirectionalLight(0xffffff, 1);
+        sun.position.set(5, 10, 7);
+        scene.add(sun);
+
+        // Local Player (The Cube)
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+        const playerMesh = new THREE.Mesh(geometry, material);
+        scene.add(playerMesh);
+        camera.position.z = 5;
+
+        // Other Players Container
+        const otherPlayers = {};
+
+        // 3. Multiplayer Logic
+        socket.on('currentPlayers', (players) => {
+            Object.keys(players).forEach((id) => {
+                if (id !== socket.id) addOtherPlayer(id, players[id]);
+            });
+        });
+
+        socket.on('newPlayer', (data) => addOtherPlayer(data.id, data.pos));
+
+        socket.on('playerMoved', (data) => {
+            if (otherPlayers[data.id]) {
+                otherPlayers[data.id].position.set(data.pos.x, data.pos.y, data.pos.z);
+            }
+        });
+
+        socket.on('playerDisconnected', (id) => {
+            scene.remove(otherPlayers[id]);
+            delete otherPlayers[id];
+        });
+
+        function addOtherPlayer(id, pos) {
+            const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+            mesh.position.set(pos.x, pos.y, pos.z);
+            otherPlayers[id] = mesh;
+            scene.add(mesh);
+        }
+
+        // 4. Movement & Animation
+        const keys = {};
+        window.addEventListener('keydown', (e) => keys[e.code] = true);
+        window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (keys['ArrowLeft'])  playerMesh.position.x -= 0.1;
+            if (keys['ArrowRight']) playerMesh.position.x += 0.1;
+            if (keys['ArrowUp'])    playerMesh.position.y += 0.1;
+            if (keys['ArrowDown'])  playerMesh.position.y -= 0.1;
+
+            // Send position to server
+            if (keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown']) {
+                socket.emit('playerMovement', { 
+                    x: playerMesh.position.x, 
+                    y: playerMesh.position.y, 
+                    z: playerMesh.position.z 
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
