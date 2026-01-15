@@ -1,7 +1,6 @@
 {
-  "name": "slender-server",
+  "name": "slender-multiplayer",
   "version": "1.0.0",
-  "description": "Multiplayer Slender Server",
   "main": "server.js",
   "dependencies": {
     "express": "^4.18.2",
