@@ -1,96 +1,127 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>3D Multiplayer Escape</title>
-    <style> body { margin: 0; overflow: hidden; } </style>
+    <title>Slender Multiplayer</title>
+    <style>
+        body { margin: 0; background: black; overflow: hidden; font-family: sans-serif; }
+        #static-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: url('assets/static.gif'); background-size: repeat;
+            opacity: 0; pointer-events: none; z-index: 10;
+        }
+        #death-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(150, 0, 0, 0.9); display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            color: white; z-index: 20;
+        }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; z-index: 5; }
+    </style>
 </head>
 <body>
+
+    <div id="ui">STAY AWAY FROM HIM</div>
+    <div id="static-overlay"></div>
+    <div id="death-screen">
+        <h1>YOU DIED</h1>
+        <button onclick="location.reload()">RETRY</button>
+    </div>
+    <audio id="static-sound" src="assets/static.mp3" loop></audio>
+
     <script type="importmap">
-        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
     </script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <script type="module">
         import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // 1. Setup Socket connection
-        // Replace with your actual server URL once deployed
-        const socket = io('https://your-server-name.onrender.com'); 
+        // 1. CONNECT TO YOUR RENDER SERVER
+        const socket = io('https://slenderman-multiplayer-1.onrender.com');
 
-        // 2. Setup 3D Scene
+        // 2. SCENE SETUP
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb); // Sky blue
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
+        scene.fog = new THREE.FogExp2(0x000000, 0.15);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // Lighting
-        const light = new THREE.AmbientLight(0xffffff, 0.5);
+        // Flashlight
+        const light = new THREE.SpotLight(0xffffff, 50);
+        light.distance = 40;
         scene.add(light);
-        const sun = new THREE.DirectionalLight(0xffffff, 1);
-        sun.position.set(5, 10, 7);
-        scene.add(sun);
+        scene.add(light.target);
 
-        // Local Player (The Cube)
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-        const playerMesh = new THREE.Mesh(geometry, material);
-        scene.add(playerMesh);
-        camera.position.z = 5;
+        // Ground
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: 0x111111}));
+        ground.rotation.x = -Math.PI/2;
+        scene.add(ground);
 
-        // Other Players Container
-        const otherPlayers = {};
-
-        // 3. Multiplayer Logic
-        socket.on('currentPlayers', (players) => {
-            Object.keys(players).forEach((id) => {
-                if (id !== socket.id) addOtherPlayer(id, players[id]);
-            });
+        // 3. LOAD SLENDERMAN
+        let slenderMan;
+        const loader = new GLTFLoader();
+        loader.load('assets/slenderman.glb', (gltf) => {
+            slenderMan = gltf.scene;
+            scene.add(slenderMan);
+            slenderMan.position.set(0, 0, -15);
         });
 
-        socket.on('newPlayer', (data) => addOtherPlayer(data.id, data.pos));
-
+        // 4. MULTIPLAYER PLAYERS
+        const friends = {};
         socket.on('playerMoved', (data) => {
-            if (otherPlayers[data.id]) {
-                otherPlayers[data.id].position.set(data.pos.x, data.pos.y, data.pos.z);
+            if (!friends[data.id]) {
+                friends[data.id] = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshStandardMaterial({color: 0x444444}));
+                scene.add(friends[data.id]);
             }
+            friends[data.id].position.set(data.pos.x, 1, data.pos.z);
         });
 
-        socket.on('playerDisconnected', (id) => {
-            scene.remove(otherPlayers[id]);
-            delete otherPlayers[id];
-        });
-
-        function addOtherPlayer(id, pos) {
-            const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xff0000 }));
-            mesh.position.set(pos.x, pos.y, pos.z);
-            otherPlayers[id] = mesh;
-            scene.add(mesh);
-        }
-
-        // 4. Movement & Animation
+        // 5. GAME LOOP & SCARES
         const keys = {};
-        window.addEventListener('keydown', (e) => keys[e.code] = true);
-        window.addEventListener('keyup', (e) => keys[e.code] = false);
+        let exposureTime = 0;
+        window.onkeydown = (e) => keys[e.code] = true;
+        window.onkeyup = (e) => keys[e.code] = false;
 
         function animate() {
             requestAnimationFrame(animate);
 
-            if (keys['ArrowLeft'])  playerMesh.position.x -= 0.1;
-            if (keys['ArrowRight']) playerMesh.position.x += 0.1;
-            if (keys['ArrowUp'])    playerMesh.position.y += 0.1;
-            if (keys['ArrowDown'])  playerMesh.position.y -= 0.1;
+            // Movement
+            let speed = keys['ShiftLeft'] ? 0.2 : 0.1;
+            if (keys['KeyW']) camera.position.z -= speed;
+            if (keys['KeyS']) camera.position.z += speed;
+            if (keys['KeyA']) camera.position.x -= speed;
+            if (keys['KeyD']) camera.position.x += speed;
+
+            // Flashlight follows camera
+            light.position.copy(camera.position);
+            light.target.position.set(camera.position.x, 0, camera.position.z - 2);
 
             // Send position to server
-            if (keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown']) {
-                socket.emit('playerMovement', { 
-                    x: playerMesh.position.x, 
-                    y: playerMesh.position.y, 
-                    z: playerMesh.position.z 
-                });
-            }
+            socket.emit('playerMovement', { x: camera.position.x, y: camera.position.y, z: camera.position.z });
 
+            // Slender Logic
+            if (slenderMan) {
+                const dist = camera.position.distanceTo(slenderMan.position);
+                slenderMan.lookAt(camera.position);
+
+                if (dist < 10) {
+                    const intensity = 1 - (dist / 10);
+                    document.getElementById('static-overlay').style.opacity = intensity;
+                    document.getElementById('static-sound').play();
+                    exposureTime += 0.016;
+                    if (exposureTime > 7) document.getElementById('death-screen').style.display = 'flex';
+                } else {
+                    document.getElementById('static-overlay').style.opacity = 0;
+                    exposureTime = 0;
+                }
+            }
             renderer.render(scene, camera);
         }
         animate();
