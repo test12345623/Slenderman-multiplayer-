@@ -5,14 +5,14 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
-// FIX: This tells the browser what to show when you visit the URL
+// This fixes the "Cannot GET /" error
 app.get('/', (req, res) => {
-    res.send('<h1>Slender Multiplayer Server is Running</h1><p>Connect via your game client.</p>');
+    res.send('<h1>Slender Server is Online</h1>');
 });
 
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: "*", // Allows your local HTML file to connect
         methods: ["GET", "POST"]
     }
 });
@@ -20,15 +20,20 @@ const io = new Server(server, {
 let players = {};
 
 io.on('connection', (socket) => {
-    console.log('Player connected:', socket.id);
+    console.log('Player joined:', socket.id);
+    
+    // Initialize player position
     players[socket.id] = { x: 0, y: 0, z: 0 };
+
+    // Sync state
     socket.emit('currentPlayers', players);
     socket.broadcast.emit('newPlayer', { id: socket.id, pos: players[socket.id] });
 
-    socket.on('playerMovement', (movementData) => {
+    // Handle movement from clients
+    socket.on('playerMovement', (data) => {
         if (players[socket.id]) {
-            players[socket.id] = movementData;
-            socket.broadcast.emit('playerMoved', { id: socket.id, pos: movementData });
+            players[socket.id] = data;
+            socket.broadcast.emit('playerMoved', { id: socket.id, pos: data });
         }
     });
 
@@ -39,6 +44,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is live on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Running on port ${PORT}`));
